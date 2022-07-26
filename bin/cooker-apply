@@ -1,0 +1,87 @@
+#!/bin/bash
+
+set -ueo pipefail
+
+error() {
+    printf "%s\n" >&2 "$*"
+}
+
+notify() {
+    local color="$1"
+    shift 1
+    printf "\e[%sm===> %s\e[m\n" "${color}" "$*" >&2
+}
+
+nodes=()
+recipes=()
+user=""
+mitamae="./mitamae"
+
+print_usage() {
+    cat >&2 <<EOS
+usage: $0 [OPTIONS] <recipes..>
+
+OPTIONS:
+    -h, --help:              print this usage and exit
+    -n, --node NODE:         node file or directory
+    -u, --user:              run \`mitamae\` without \`sudo\`
+    -m, --mitamae MITAMAE:   \`mitamae\` command (default: "./mitamae")
+EOS
+}
+
+while [ "$#" -ne 0 ]; do
+    case "$1" in
+        "-h" | "--help" ) print_usage; exit 0 ;;
+        "-n" | "--node" ) nodes+=("$2"); shift 2 ;;
+        "-u" | "--user" ) user="1"; shift 1 ;;
+        "-m" | "--mitamae" ) mitamae="$2"; shift 2 ;;
+        * ) recipes+=("$1"); shift 1 ;;
+    esac
+done
+
+recipe_files=()
+for recipe in "${recipes[@]}"; do
+    if [ -d "${recipe}" ]; then
+        path="${recipe}/default.rb"
+    elif [ -f "${recipe}" ]; then
+        path="${recipe}"
+    else
+        path="${recipe}.rb"
+    fi
+    if [ ! -f "${path}" ]; then
+        error "cannot find recipe: ${recipe}"
+        exit 1
+    fi
+    recipe_files+=("${path}")
+done
+
+node_files=()
+for node in "${nodes[@]}"; do
+    if [ -d "${node}" ]; then
+        node_files+=("${node}"/*)
+    else
+        node_files+=("${node}")
+    fi
+done
+
+args=()
+for node_file in "${node_files[@]}"; do
+    args+=("--node-yaml" "${node_file}")
+done
+args+=("${recipe_files[@]}")
+
+if [ -z "${user}" ]; then
+    cmd=(sudo "${mitamae}" local)
+else
+    cmd=("${mitamae}" local)
+fi
+
+notify "1;34" "running mitamae"
+"${cmd[@]}" "${args[@]}" && ok="1" || ok=""
+
+if [ -n "${ok}" ]; then
+    notify "1;32" "succeeded"
+else
+    notify "1;31" "failed"
+    exit 1
+fi

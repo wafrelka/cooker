@@ -1,0 +1,142 @@
+#!/bin/bash
+
+set -ueo pipefail
+
+REPLACE_URL="https://raw.githubusercontent.com/wafrelka/replace/master/replace"
+DEFAULT_COOKER_CACHE_DIR="${XDG_CACHE_HOME:-"${HOME}/.cache"}/cooker"
+COOKER_CACHE_DIR="${COOKER_CACHE_DIR:-"${DEFAULT_COOKER_CACHE_DIR}"}"
+COOKER_BIN="$(dirname "$(readlink -f "$0")")"
+
+info() {
+    printf "[*] %s\n" "$*" >&2
+}
+
+run() {
+    printf "\e[2m$ %s\e[m\n" "$*" >&2
+    "$@"
+}
+
+run_ssh() {
+    run ssh "${ssh_options[@]}" "${target}" "$@"
+}
+
+at_exit_cmds=()
+at_exit() { at_exit_cmds+=("$@"); }
+run_at_exit_cmds() {
+    info "cleaning"
+    for cmd in "${at_exit_cmds[@]}"; do
+        "${cmd}"
+    done
+}
+trap run_at_exit_cmds EXIT
+
+nodes=()
+secrets=()
+includes=()
+user=""
+setup=""
+target=""
+ssh_options=()
+ssh_agent=""
+recipes=()
+
+print_usage() {
+    cat >&2 <<EOS
+usage: $0 [OPTIONS] [RECIPES..]
+
+OPTIONS:
+    -h, --help:                print this usage and exit
+    -n, --node NODE:           node file path
+    -s, --secret SECRET:       secret file path
+    -I, --include INCLUDE:     add INCLUDE to packed recipe
+    -u, --user:                run \`mitamae\` without \`sudo\`
+    -S, --setup:               run setup script
+    -t, --target TARGET:       target ssh host (defaults to basename of last NODE)
+    -o, --ssh-option OPTION:   ssh option
+    -A:                        enable ssh agent forwarding
+EOS
+}
+
+while [ "$#" -ne 0 ]; do
+    case "$1" in
+        "-h" | "--help" ) print_usage; exit 0 ;;
+        "-n" | "--node" ) nodes+=("$2"); shift 2 ;;
+        "-s" | "--secret" ) secrets+=("$2"); shift 2 ;;
+        "-I" | "--include" ) includes+=("$2"); shift 2 ;;
+        "-u" | "--user" ) user="1"; shift 1 ;;
+        "-S" | "--setup" ) setup="1"; shift 1 ;;
+        "-t" | "--target" ) target="$2"; shift 2 ;;
+        "-o" | "--ssh-option" ) ssh_options+=("$2"); shift 2 ;;
+        "-A" ) ssh_agent="1"; shift 1 ;;
+        * ) recipes+=("$1"); shift 1 ;;
+    esac
+done
+
+if [ -z "${target}" ]; then
+    for node in "${nodes[@]}"; do
+        node_fname="$(basename "${node}")"
+        target="${node_fname%.*}"
+    done
+fi
+
+info "checking target platform"
+platform="$(run_ssh uname -sm)"
+mitamae="${COOKER_CACHE_DIR}/mitamae-$(tr ' ' '-' <<< "${platform,,}")"
+
+info "preparing \`mitamae\` executable"
+run "${COOKER_BIN}/cooker-mitamae" --platform "${platform}" "${mitamae}"
+
+replace="$(readlink -f "${COOKER_CACHE_DIR}/replace")"
+if [ ! -f "${replace}" ]; then
+    info "downloading \`replace\`"
+    run mkdir -p "$(dirname "${replace}")"
+    run curl -sSL -o "${replace}" "${REPLACE_URL}"
+    run chmod +x "${replace}"
+fi
+
+info "packing recipes"
+pack_args=()
+for node in "${nodes[@]}"; do
+    pack_args+=("--node" "${node}")
+done
+for secret in "${secrets[@]}"; do
+    pack_args+=("--secret" "${secret}")
+done
+recipe_archive="$(mktemp --suffix=-cooker-recipes.tar.gz)"
+rm_recipe_archive() { run rm "${recipe_archive}"; }
+at_exit "rm_recipe_archive"
+pack_args+=(
+    "${includes[@]}"
+    "${mitamae}:bin/mitamae"
+    "${COOKER_BIN}/cooker-apply:bin/cooker-apply"
+    "${COOKER_BIN}/cooker-setup:bin/cooker-setup"
+    --output "${recipe_archive}" --replace "${replace}"
+)
+run "${COOKER_BIN}/cooker-pack" "${pack_args[@]}"
+
+info "transfering recipes"
+remote_dir="$(run_ssh mktemp -d --suffix=-cooker-recipes)"
+rm_remote_dir() { run_ssh rm -r -- "${remote_dir}"; }
+at_exit "rm_remote_dir"
+run_ssh tar xz -C "${remote_dir}" -m < "${recipe_archive}"
+
+info "applying recipes"
+ssh_args=("-t")
+if [ -n "${ssh_agent}" ]; then
+    ssh_args+=("-A")
+fi
+apply_args=("--node" "nodes" "--mitamae" "./bin/mitamae")
+if [ -n "${user}" ]; then
+    apply_args+=("--user")
+fi
+apply_args+=("${recipes[@]}")
+cmd=(cd "${remote_dir}")
+if [ -n "${setup}" ]; then
+    if [ -n "${user}" ]; then
+        cmd+=("&&" "./bin/cooker-setup")
+    else
+        cmd+=("&&" "sudo" "./bin/cooker-setup")
+    fi
+fi
+cmd+=("&&" "./bin/cooker-apply" "${apply_args[@]}")
+run_ssh "${ssh_args[@]}" -- "${cmd[@]}"

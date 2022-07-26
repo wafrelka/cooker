@@ -1,0 +1,63 @@
+#!/bin/bash
+
+set -ueo pipefail
+
+nodes=()
+secrets=()
+files=()
+output="recipes.tar.gz"
+replace="./replace"
+
+print_usage() {
+    cat >&2 <<EOS
+usage: $0 [OPTIONS] <files..>
+
+OPTIONS:
+    -h, --help:              print this usage and exit
+    -n, --node NODE:         node file
+    -s, --secret SECRET:     secret file
+    -o, --output OUTPUT:     output archive path (default: "recipes.tar.gz")
+    -r, --replace REPLACE:   \`replace\` command to process secrets (default: "replace")
+EOS
+}
+
+while [ "$#" -ne 0 ]; do
+    case "$1" in
+        "-h" | "--help" ) print_usage; exit 0 ;;
+        "-n" | "--node" ) nodes+=("$2"); shift 2 ;;
+        "-s" | "--secret" ) secrets+=("$2"); shift 2 ;;
+        "-o" | "--output" ) output="$2"; shift 2 ;;
+        "-r" | "--replace" ) replace="$2"; shift 2 ;;
+        * ) files+=("$1"); shift 1 ;;
+    esac
+done
+
+temp_dir="$(mktemp -d --suffix=-cooker-pack)"
+rm_temp_dir() { rm -r "${temp_dir}"; }
+trap "rm_temp_dir" EXIT
+
+for file in "${files[@]}"; do
+    if [[ "${file}" =~ : ]]; then
+        src="$(cut -d ":" -f 1 <<< "${file}")"
+        dest="$(cut -d ":" -f 2- <<< "${file}")"
+    else
+        src="${file}"
+        dest=""
+    fi
+    dest="${temp_dir}/${dest}"
+    dir="$(dirname "${dest}")"
+    mkdir -p "${dir}"
+    cp -r "${src}" "${dest}"
+done
+
+for index in $(seq 0 $(("${#nodes[@]}" - 1))); do
+    node="${nodes[${index}]}"
+    content="### base: ${node}"$'\n'"$(cat "${node}")"
+    for secret in "${secrets[@]}"; do
+        content="$("${replace}" "-" "${secret}" <<< "${content}")"
+    done
+    mkdir -p "${temp_dir}/nodes"
+    cat <<< "${content}" > "${temp_dir}/nodes/${index}.yaml"
+done
+
+(cd "${temp_dir}" && tar cz -- *) > "${output}"

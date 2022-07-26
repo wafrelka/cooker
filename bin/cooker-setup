@@ -1,0 +1,36 @@
+#!/bin/bash
+
+set -ueo pipefail
+
+error() {
+    printf "\e[31m%s\e[m\n" "$*" >&2
+}
+
+silent() {
+    "$@" > /dev/null 2>&1
+}
+
+setup_debian() {
+    apt-get update
+    apt-get upgrade -y
+    apt-get install --no-install-recommends -y curl git which
+}
+
+setup_arch() {
+    pacman -Sy --noconfirm archlinux-keyring
+    pacman -Syu --noconfirm
+    pacman -S --noconfirm curl git which
+}
+
+if silent apt-get --version; then
+    setup_debian
+    exit
+fi
+
+if silent pacman --version; then
+    setup_arch
+    exit
+fi
+
+error "unsupported platform"
+exit 1

@@ -1,0 +1,76 @@
+#!/bin/bash
+
+set -ueo pipefail
+
+MITAMAE_VERSION="v1.13.0"
+declare -A MITAMAE_SHA256=(
+    ["aarch64-linux"]="3698c85a7286130facb04dc48a6f6df205edc1d727370b0ccc8e73fde66a240f"
+    ["armhf-linux"]="21a8167673f47b90c04f58e947a265bdb4911dfa9e7e767041a469b5c18b5128"
+    ["x86_64-linux"]="b01f3a05d84b4c96ce4e10519e54761e11f8b3cb817529c0f2213151fa74cb50"
+)
+
+error() {
+    printf "%s\n" >&2 "$*"
+}
+
+arch=""
+platform="$(uname -sm)"
+output="mitamae"
+
+print_usage() {
+    cat >&2 <<EOS
+usage: $0 [OPTIONS] [output]
+
+OPTIONS:
+    -h, --help:                print this usage and exit
+    -a, --arch ARCH:           architecture
+    -p, --platform PLATFORM:   \`uname -sm\` result to infer ARCH
+EOS
+}
+
+while [ "$#" -ne 0 ]; do
+    case "$1" in
+        "-h" | "--help" ) print_usage; exit 0 ;;
+        "-a" | "--arch" ) arch="$2"; shift 2 ;;
+        "-p" | "--platform" ) platform="$2"; shift 2 ;;
+        * ) output="$1"; shift 1 ;;
+    esac
+done
+
+if [ -z "${arch}" ]; then
+    case "${platform}" in
+        "Linux arm64" ) arch="aarch64-linux" ;;
+        "Linux armv"* ) arch="armhf-linux" ;;
+        "Linux x86_64" ) arch="x86_64-linux" ;;
+        *) error "unsupported platform: ${platform}"; exit 1 ;;
+    esac
+fi
+
+url="https://github.com/itamae-kitchen/mitamae/releases/download/${MITAMAE_VERSION}/mitamae-${arch}"
+bin_hash="${MITAMAE_SHA256["${arch}"]}"
+
+check_hash() {
+    if [ -f "$1" ] && (sha256sum -c <<< "${bin_hash} $1" >/dev/null 2>&1); then
+        return 0
+    fi
+    return 1
+}
+
+if check_hash "${output}"; then
+    exit
+fi
+
+dir="$(dirname "${output}")"
+mkdir -p "${dir}"
+temp_path="$(mktemp -p "${dir}")"
+
+curl -sSL -o "${temp_path}" "${url}"
+
+if ! check_hash "${temp_path}"; then
+    error "download failed (hash mismatch)"
+    rm "${temp_path}"
+    exit 1
+fi
+
+mv "${temp_path}" "${output}"
+chmod +x "${output}"
