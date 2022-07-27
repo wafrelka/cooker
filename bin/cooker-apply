@@ -13,6 +13,7 @@ notify() {
 }
 
 nodes=()
+envs=()
 recipes=()
 user=""
 mitamae="./mitamae"
@@ -24,6 +25,7 @@ usage: $0 [OPTIONS] <recipes..>
 OPTIONS:
     -h, --help:              print this usage and exit
     -n, --node NODE:         node file or directory
+    -e, --env ENV=VALUE:     set environment variable
     -u, --user:              run \`mitamae\` without \`sudo\`
     -m, --mitamae MITAMAE:   \`mitamae\` command (default: "./mitamae")
 EOS
@@ -33,6 +35,7 @@ while [ "$#" -ne 0 ]; do
     case "$1" in
         "-h" | "--help" ) print_usage; exit 0 ;;
         "-n" | "--node" ) nodes+=("$2"); shift 2 ;;
+        "-e" | "--env" ) envs+=("$2"); shift 2 ;;
         "-u" | "--user" ) user="1"; shift 1 ;;
         "-m" | "--mitamae" ) mitamae="$2"; shift 2 ;;
         * ) recipes+=("$1"); shift 1 ;;
@@ -71,9 +74,9 @@ done
 args+=("${recipe_files[@]}")
 
 if [ -z "${user}" ]; then
-    cmd=(sudo "${mitamae}" local)
+    cmd=(sudo env - "${envs[@]}" "${mitamae}" local)
 else
-    cmd=("${mitamae}" local)
+    cmd=(env - "${envs[@]}" "${mitamae}" local)
 fi
 
 notify "1;34" "running mitamae"
