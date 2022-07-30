@@ -20,15 +20,13 @@ run_ssh() {
     run ssh "${ssh_options[@]}" "${target}" "$@"
 }
 
-at_exit_cmds=()
-at_exit() { at_exit_cmds+=("$@"); }
-run_at_exit_cmds() {
-    info "cleaning"
-    for cmd in "${at_exit_cmds[@]}"; do
-        "${cmd}"
+quote() {
+    quoted=()
+    for arg in "$@"; do
+        quoted+=("$(printf "%q" "${arg}")")
     done
+    printf "%s" "${quoted[*]}"
 }
-trap run_at_exit_cmds EXIT
 
 nodes=()
 secrets=()
@@ -84,6 +82,32 @@ if [ -z "${target}" ]; then
     done
 fi
 
+env_args=()
+for env_var in "${envs[@]}"; do
+    env_args+=("--env" "${env_var}")
+done
+apply_script="$(cat << EOS
+#!/bin/bash
+set -ue
+rm_all() {
+    if [ -f ./bin/cooker-apply ]; then
+        d="\$(pwd)"
+        cd / && rm -r "\${d}"
+    fi
+}
+trap rm_all EXIT
+if [ -n "${setup}" ]; then
+    ./bin/cooker-setup ${user:+"--user"}
+fi
+./bin/cooker-apply \
+    --node nodes \
+    --mitamae ./bin/mitamae \
+    $(quote "${env_args[@]}") \
+    ${user:+"--user"} \
+    $(quote "${recipes[@]}")
+EOS
+)"
+
 info "checking target platform"
 platform="$(run_ssh uname -sm)"
 mitamae="${COOKER_CACHE_DIR}/mitamae-$(tr ' ' '-' <<< "${platform,,}")"
@@ -109,42 +133,24 @@ for secret in "${secrets[@]}"; do
 done
 recipe_archive="$(mktemp --suffix=-cooker-recipes.tar.gz)"
 rm_recipe_archive() { run rm "${recipe_archive}"; }
-at_exit "rm_recipe_archive"
+trap "rm_recipe_archive" EXIT
 pack_args+=(
+    --output "${recipe_archive}" --replace "${replace}"
     "${includes[@]}"
     "${mitamae}:bin/mitamae"
     "${COOKER_BIN}/cooker-apply:bin/cooker-apply"
     "${COOKER_BIN}/cooker-setup:bin/cooker-setup"
-    --output "${recipe_archive}" --replace "${replace}"
 )
-run "${COOKER_BIN}/cooker-pack" "${pack_args[@]}"
+run "${COOKER_BIN}/cooker-pack" "${pack_args[@]}" <(cat <<< "${apply_script}")":apply"
 
 info "transfering recipes"
 remote_dir="$(run_ssh mktemp -d --suffix=-cooker-recipes)"
-rm_remote_dir() { run_ssh rm -r -- "${remote_dir}"; }
-at_exit "rm_remote_dir"
-run_ssh tar xz -C "${remote_dir}" -m < "${recipe_archive}"
+quoted_remote_dir="$(quote "${remote_dir}")"
+run_ssh tar xz -C "${quoted_remote_dir}" -m < "${recipe_archive}"
 
 info "applying recipes"
 ssh_args=("-t")
 if [ -n "${ssh_agent}" ]; then
     ssh_args+=("-A")
 fi
-apply_args=("--node" "nodes" "--mitamae" "./bin/mitamae")
-if [ -n "${user}" ]; then
-    apply_args+=("--user")
-fi
-apply_args+=("${recipes[@]}")
-for env_var in "${envs[@]}"; do
-    apply_args+=("--env" "${env_var}")
-done
-cmd=(cd "${remote_dir}")
-if [ -n "${setup}" ]; then
-    if [ -n "${user}" ]; then
-        cmd+=("&&" "./bin/cooker-setup")
-    else
-        cmd+=("&&" "sudo" "./bin/cooker-setup")
-    fi
-fi
-cmd+=("&&" "./bin/cooker-apply" "${apply_args[@]}")
-run_ssh "${ssh_args[@]}" -- "${cmd[@]}"
+run_ssh "${ssh_args[@]}" -- "cd ${quoted_remote_dir} && bash ./apply"
