@@ -54,6 +54,7 @@ OPTIONS:
     -u, --user:                run \`mitamae\` without \`sudo\`
     -S, --setup:               run setup script
     -t, --target TARGET:       target ssh host (defaults to basename of last NODE)
+    -F CONFIGFILE:             equivalent to \`-o -F -o CONFIGFILE\`
     -o, --ssh-option OPTION:   ssh option
     -A:                        enable ssh agent forwarding
 EOS
@@ -69,6 +70,7 @@ while [ "$#" -ne 0 ]; do
         "-u" | "--user" ) user="1"; shift 1 ;;
         "-S" | "--setup" ) setup="1"; shift 1 ;;
         "-t" | "--target" ) target="$2"; shift 2 ;;
+        "-F" ) ssh_options+=("-F" "$2"); shift 2 ;;
         "-o" | "--ssh-option" ) ssh_options+=("$2"); shift 2 ;;
         "-A" ) ssh_agent="1"; shift 1 ;;
         * ) recipes+=("$1"); shift 1 ;;
