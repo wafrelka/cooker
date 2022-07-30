@@ -17,7 +17,7 @@ run() {
 }
 
 run_ssh() {
-    run ssh "${ssh_options[@]}" "${target}" "$@"
+    run ${ssh_cmd} "${ssh_options[@]}" "${target}" "$@"
 }
 
 quote() {
@@ -36,6 +36,7 @@ user=""
 setup=""
 target=""
 ssh_options=()
+ssh_cmd="ssh"
 ssh_agent=""
 recipes=()
 
@@ -54,6 +55,7 @@ OPTIONS:
     -t, --target TARGET:       target ssh host (defaults to basename of last NODE)
     -F CONFIGFILE:             equivalent to \`-o -F -o CONFIGFILE\`
     -o, --ssh-option OPTION:   ssh option
+    --ssh-program SSH:         Use \`SSH\` instead of \`ssh\` for communication
     -A:                        enable ssh agent forwarding
 EOS
 }
@@ -70,6 +72,7 @@ while [ "$#" -ne 0 ]; do
         "-t" | "--target" ) target="$2"; shift 2 ;;
         "-F" ) ssh_options+=("-F" "$2"); shift 2 ;;
         "-o" | "--ssh-option" ) ssh_options+=("$2"); shift 2 ;;
+        "--ssh-program" ) ssh_cmd="$2"; shift 2 ;;
         "-A" ) ssh_agent="1"; shift 1 ;;
         * ) recipes+=("$1"); shift 1 ;;
     esac
