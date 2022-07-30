@@ -47,7 +47,11 @@ for file in "${files[@]}"; do
     dest="${temp_dir}/${dest}"
     dir="$(dirname "${dest}")"
     mkdir -p "${dir}"
-    cp -r "${src}" "${dest}"
+    if [ -d "${src}" ] || [ -f "${src}" ]; then
+        cp -r "${src}" "${dest}"
+    else
+        cat "${src}" > "${dest}"
+    fi
 done
 
 nodes_dir="${temp_dir}/nodes"
