@@ -41,13 +41,13 @@ done
 setup_debian() {
     run apt-get update
     run apt-get upgrade -y
-    run apt-get install --no-install-recommends -y curl git which
+    run apt-get install --no-install-recommends -y sudo curl git which
 }
 
 setup_arch() {
     run pacman -Sy --noconfirm archlinux-keyring
     run pacman -Syu --noconfirm
-    run pacman -S --noconfirm curl git which
+    run pacman -S --noconfirm sudo curl git which
 }
 
 if silent apt-get --version; then
