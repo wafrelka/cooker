@@ -10,16 +10,44 @@ silent() {
     "$@" > /dev/null 2>&1
 }
 
+run() {
+    if [ -n "${user}" ]; then
+        "$@"
+    else
+        sudo -- "$@"
+    fi
+}
+
+user=""
+
+print_usage() {
+    cat >&2 <<EOS
+usage: $0 [OPTIONS]
+
+OPTIONS:
+    -h, --help:   print this usage and exit
+    -u, --user:   run setup commands without \`sudo\`
+EOS
+}
+
+while [ "$#" -ne 0 ]; do
+    case "$1" in
+        "-h" | "--help" ) print_usage; exit 0 ;;
+        "-u" | "--user" ) user="1"; shift 1 ;;
+        * ) print_usage; exit 1 ;;
+    esac
+done
+
 setup_debian() {
-    apt-get update
-    apt-get upgrade -y
-    apt-get install --no-install-recommends -y curl git which
+    run apt-get update
+    run apt-get upgrade -y
+    run apt-get install --no-install-recommends -y curl git which
 }
 
 setup_arch() {
-    pacman -Sy --noconfirm archlinux-keyring
-    pacman -Syu --noconfirm
-    pacman -S --noconfirm curl git which
+    run pacman -Sy --noconfirm archlinux-keyring
+    run pacman -Syu --noconfirm
+    run pacman -S --noconfirm curl git which
 }
 
 if silent apt-get --version; then
