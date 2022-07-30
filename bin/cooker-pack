@@ -50,14 +50,16 @@ for file in "${files[@]}"; do
     cp -r "${src}" "${dest}"
 done
 
+nodes_dir="${temp_dir}/nodes"
+mkdir -p "${nodes_dir}"
+
 for index in $(seq 0 $(("${#nodes[@]}" - 1))); do
     node="${nodes[${index}]}"
     content="### base: ${node}"$'\n'"$(cat "${node}")"
     for secret in "${secrets[@]}"; do
         content="$("${replace}" "-" "${secret}" <<< "${content}")"
     done
-    mkdir -p "${temp_dir}/nodes"
-    cat <<< "${content}" > "${temp_dir}/nodes/${index}.yaml"
+    cat <<< "${content}" > "${nodes_dir}/${index}.yaml"
 done
 
 (cd "${temp_dir}" && tar cz -- *) > "${output}"
