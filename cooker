@@ -240,13 +240,14 @@ pack_recipes() {
 }
 
 apply_recipes() {
-    local mitamae
-    if [ -n "${user_mode}" ]; then
-        mitamae=(env "${envs[*]}" ./mitamae)
-    else
-        mitamae=(sudo 'SSH_AUTH_SOCK=${SSH_AUTH_SOCK:-}' env "${envs[*]}" ./mitamae)
+    local quoted_envs=""
+    if [ -n "${envs[*]}" ]; then
+        quoted_envs="$(printf "%q " "${envs[@]}")"
     fi
-
+    local quoted_recipes=""
+    if [ -n "${recipes[*]}" ]; then
+        quoted_recipes="$(printf "%q " "${recipes[@]}")"
+    fi
     local mitamae_options=(-y config.yaml)
     if [ -n "${dryrun_mode}" ]; then
         mitamae_options+=("--dry-run")
@@ -259,7 +260,14 @@ workdir="\$(dirname "\$(readlink -f "\$0")")"
 trap 'rm -r "\${workdir}"' EXIT
 cd "\${workdir}"
 tar xzf recipes.tar.gz
-${mitamae[*]} local ${mitamae_options[*]} $(printf "%q " "${recipes[@]}")
+cmd=(env ${quoted_envs} ./mitamae local ${mitamae_options[*]} ${quoted_recipes})
+if [ "\$(whoami)" = "root" ] || [ -n "${user_mode}" ]; then
+    set -x
+    "\${cmd[@]}"
+else
+    set -x
+    sudo SSH_AUTH_SOCK="\${SSH_AUTH_SOCK:-}" "\${cmd[@]}"
+fi
 EOS
     chmod +x "${work_dir}/apply"
 
