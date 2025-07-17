@@ -253,33 +253,43 @@ apply_recipes() {
         mitamae_options+=("--dry-run")
     fi
 
-    cat > "${work_dir}/apply" <<EOS
+    local quoted_prelude_scripts=""
+    if [ -n "${PRELUDE_SCRIPTS:-}" ]; then
+        IFS=':' read -ra SCRIPTS <<< "${PRELUDE_SCRIPTS}"
+        quoted_prelude_scripts="$(printf "%q\n" "${SCRIPTS[@]}")"
+    fi
+
+    cat > "${work_dir}/run" <<EOS
 #!/usr/bin/env bash
 set -ueo pipefail
 workdir="\$(dirname "\$(readlink -f "\$0")")"
 trap 'rm -r "\${workdir}"' EXIT
 cd "\${workdir}"
 tar xzf recipes.tar.gz
-cmd=(env ${quoted_envs} ./mitamae local ${mitamae_options[*]} ${quoted_recipes})
 if [ "\$(whoami)" = "root" ] || [ -n "${user_mode}" ]; then
-    set -x
-    "\${cmd[@]}"
+    ./apply
 else
-    set -x
-    sudo SSH_AUTH_SOCK="\${SSH_AUTH_SOCK:-}" "\${cmd[@]}"
+    sudo SSH_AUTH_SOCK="\${SSH_AUTH_SOCK:-}" ./apply
 fi
 EOS
+    cat > "${work_dir}/apply" <<EOS
+set -x
+${quoted_prelude_scripts}
+env ${quoted_envs} ./mitamae local ${mitamae_options[*]} ${quoted_recipes}
+EOS
+
+    chmod +x "${work_dir}/run"
     chmod +x "${work_dir}/apply"
 
     info "copying recipes..."
     local remote_work_dir
     remote_work_dir="$(execute mktemp -d)"
-    local srcs=("${work_dir}/recipes.tar.gz" "${work_dir}/apply")
+    local srcs=("${work_dir}/recipes.tar.gz" "${work_dir}/run" "${work_dir}/apply")
     add_files "${remote_work_dir}" "${srcs[@]}" || fatal "could not copy recipes"
 
     info "applying recipes..."
     (
-        execute_term bash "${remote_work_dir}/apply" 2>&1 | quote &&
+        execute_term bash "${remote_work_dir}/run" 2>&1 | quote &&
         success "recipes applied"
     ) || fatal "could not apply recipes"
 }
