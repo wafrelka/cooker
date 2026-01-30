@@ -204,7 +204,7 @@ prepare_mitamae() {
     local version="$MITAMAE_VERSION"
     local url="${MITAMAE_RELEASES[${arch}]}"
     local mitamae_cache="${CACHE_DIR}/mitamae/mitamae-${version}-${arch}"
-    local mitamae_bin="${work_dir}/recipes/mitamae"
+    local mitamae_bin="${work_dir}/mitamae"
 
     if [ -f "${mitamae_cache}" ]; then
         cp "${mitamae_cache}" "${mitamae_bin}"
@@ -265,7 +265,8 @@ set -ueo pipefail
 workdir="\$(dirname "\$(readlink -f "\$0")")"
 trap 'rm -r "\${workdir}"' EXIT
 cd "\${workdir}"
-tar xzf recipes.tar.gz
+mkdir -p recipes
+tar xzf recipes.tar.gz -C recipes
 if [ "\$(whoami)" = "root" ] || [ -n "${user_mode}" ]; then
     ./apply
 else
@@ -274,8 +275,9 @@ fi
 EOS
     cat > "${work_dir}/apply" <<EOS
 set -x
+cd recipes
 ${quoted_prelude_scripts}
-env ${quoted_envs} ./mitamae local ${mitamae_options[*]} ${quoted_recipes}
+env ${quoted_envs} ../mitamae local ${mitamae_options[*]} ${quoted_recipes}
 EOS
 
     chmod +x "${work_dir}/run"
@@ -284,7 +286,7 @@ EOS
     info "copying recipes..."
     local remote_work_dir
     remote_work_dir="$(execute mktemp -d)"
-    local srcs=("${work_dir}/recipes.tar.gz" "${work_dir}/run" "${work_dir}/apply")
+    local srcs=("${work_dir}/recipes.tar.gz" "${work_dir}/mitamae" "${work_dir}/run" "${work_dir}/apply")
     add_files "${remote_work_dir}" "${srcs[@]}" || fatal "could not copy recipes"
 
     info "applying recipes..."
