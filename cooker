@@ -6,6 +6,7 @@ MITAMAE_VERSION="v1.14.1"
 declare -A MITAMAE_RELEASES=(
     ["x86_64"]="https://github.com/itamae-kitchen/mitamae/releases/download/${MITAMAE_VERSION}/mitamae-x86_64-linux"
     ["armv7l"]="https://github.com/itamae-kitchen/mitamae/releases/download/${MITAMAE_VERSION}/mitamae-armhf-linux"
+    ["aarch64"]="https://github.com/itamae-kitchen/mitamae/releases/download/${MITAMAE_VERSION}/mitamae-aarch64-linux"
 )
 DEFAULT_RECIPES=("main.rb")
 CACHE_DIR="${XDG_CACHE_HOME:-"$HOME/.cache"}/cooker"
